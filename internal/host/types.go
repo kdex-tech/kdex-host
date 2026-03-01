@@ -15,7 +15,6 @@ import (
 	"github.com/kdex-tech/host-manager/internal/sniffer"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message/catalog"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kdexv1alpha1 "kdex.dev/crds/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -52,8 +51,8 @@ type HostHandler struct {
 	authConfig                *auth.Config
 	authExchanger             *auth.Exchanger
 	cacheManager              cache.CacheManager
+	checksum                  string
 	client                    client.Client
-	conditions                *[]metav1.Condition
 	defaultLanguage           string
 	favicon                   *ico.Ico
 	functions                 []kdexv1alpha1.KDexFunction
@@ -72,6 +71,7 @@ type HostHandler struct {
 		Analyze(*http.Request) (*sniffer.AnalysisResult, error)
 		DocsHandler(http.ResponseWriter, *http.Request)
 	}
+	status               *kdexv1alpha1.KDexObjectStatus
 	themeAssets          []kdexv1alpha1.Asset
 	translationResources map[string]kdexv1alpha1.KDexTranslationSpec
 	utilityPages         map[kdexv1alpha1.KDexUtilityPageType]page.PageHandler

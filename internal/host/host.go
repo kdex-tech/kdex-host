@@ -3,10 +3,13 @@ package host
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"maps"
 	"net/http"
 	"runtime/debug"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,7 +25,6 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kdexv1alpha1 "kdex.dev/crds/api/v1alpha1"
 	"kdex.dev/crds/render"
 )
@@ -77,22 +79,71 @@ func (hh *HostHandler) GetOpenAPIBuilder() *ko.Builder {
 	return &hh.openapiBuilder
 }
 
+func (hh *HostHandler) Checksum() string {
+	if hh.checksum != "" {
+		return hh.checksum
+	}
+
+	// Generate a checksum based on the hh.status
+	// This is used to invalidate the cache when the host changes
+	// We use the hh.status to ensure that the cache is invalidated when the host changes
+
+	if hh.status == nil {
+		return ""
+	}
+
+	// 1. Extract the keys
+	keys := make([]string, 0, len(hh.status.Attributes))
+	for k := range hh.status.Attributes {
+		keys = append(keys, k)
+	}
+
+	// 2. Sort the keys alphabetically
+	sort.Strings(keys)
+
+	// 3. Create a hash object
+	h := sha256.New()
+
+	// 4. Write the status.ObservedGeneration
+	h.Write([]byte(strconv.FormatInt(hh.status.ObservedGeneration, 10)))
+
+	// 5. Write key-value pairs in the sorted order
+	for _, k := range keys {
+		h.Write([]byte(k))
+		h.Write([]byte(hh.status.Attributes[k]))
+	}
+
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func (hh *HostHandler) GeneratePageCacheKey(ph page.PageHandler, l language.Tag) string {
+	// generate a stable hash from the elements that make up the page
+	// this is used to invalidate the cache when the page changes
+	// we use the page generation to ensure that the cache is invalidated when the page changes
+	// we use the language to ensure that the cache is invalidated when the language changes
+	// we use the hh.importmap to ensure that the cache is invalidated when the importmap changes
+	// we use the hh.scripts to ensure that the cache is invalidated when the scripts change
+	// we use the hh.sitemap to ensure that the cache is invalidated when the sitemap changes
+
+	return fmt.Sprintf("%s:%s", ph.Name, l.String())
+}
+
 func (hh *HostHandler) GetStatus() HostStatus {
 	hh.mu.RLock()
 	defer hh.mu.RUnlock()
 
-	if hh.host != nil {
-		if hh.conditions == nil {
+	if hh.status != nil {
+		if hh.status.Conditions == nil {
 			return HostStatusDegraded
 		}
 
-		if meta.IsStatusConditionTrue(*hh.conditions, string(kdexv1alpha1.ConditionTypeReady)) {
+		if meta.IsStatusConditionTrue(hh.status.Conditions, string(kdexv1alpha1.ConditionTypeReady)) {
 			return HostStatusReady
 		}
-		if meta.IsStatusConditionTrue(*hh.conditions, string(kdexv1alpha1.ConditionTypeProgressing)) {
+		if meta.IsStatusConditionTrue(hh.status.Conditions, string(kdexv1alpha1.ConditionTypeProgressing)) {
 			return HostStatusProgressing
 		}
-		if meta.IsStatusConditionTrue(*hh.conditions, string(kdexv1alpha1.ConditionTypeDegraded)) {
+		if meta.IsStatusConditionTrue(hh.status.Conditions, string(kdexv1alpha1.ConditionTypeDegraded)) {
 			return HostStatusDegraded
 		}
 	}
@@ -157,28 +208,36 @@ func (hh *HostHandler) L10nRender(
 	// make sure everything passed to the renderer is mutation safe (i.e. copy it)
 
 	renderer := render.Renderer{
-		BasePath:        handler.BasePath(),
-		BrandName:       hh.getBrandName(),
-		Contents:        handler.ContentToHTMLMap(),
+		Extra:   maps.Clone(extraTemplateData),
+		PageMap: maps.Clone(pageMap),
+
+		// language details
 		DefaultLanguage: hh.defaultLanguage,
-		Extra:           maps.Clone(extraTemplateData),
-		Footer:          handler.Footer,
-		FootScript:      hh.FootScriptToHTML(handler),
-		Header:          handler.Header,
-		HeadScript:      hh.HeadScriptToHTML(handler),
 		Language:        l.String(),
 		Languages:       hh.availableLanguages(translations),
-		LastModified:    hh.reconcileTime,
 		MessagePrinter:  hh.messagePrinter(translations, l),
-		Meta:            hh.MetaToString(handler, l),
+
+		// host details
+		BrandName:    hh.getBrandName(),
+		LastModified: hh.reconcileTime,
+		Organization: hh.getOrganization(),
+		Theme:        hh.ThemeAssetsToString(),
+
+		// page details
+		BasePath:        handler.BasePath(),
+		Contents:        handler.ContentToHTMLMap(),
+		Footer:          handler.Footer,
+		Header:          handler.Header,
 		Navigations:     handler.NavigationToHTMLMap(),
-		Organization:    hh.getOrganization(),
-		PageMap:         maps.Clone(pageMap),
 		PatternPath:     handler.PatternPath(),
 		TemplateContent: handler.MainTemplate,
 		TemplateName:    handler.Name,
-		Theme:           hh.ThemeAssetsToString(),
 		Title:           handler.Label(),
+
+		// combined details
+		FootScript: hh.FootScriptToHTML(handler),
+		HeadScript: hh.HeadScriptToHTML(handler),
+		Meta:       hh.MetaToString(handler, l),
 	}
 
 	return renderer.RenderPage()
@@ -422,8 +481,7 @@ func (hh *HostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (hh *HostHandler) SetHost(
 	ctx context.Context,
 	host *kdexv1alpha1.KDexHostSpec,
-	conditions *[]metav1.Condition,
-	generation int64,
+	status *kdexv1alpha1.KDexObjectStatus,
 	packageReferences []kdexv1alpha1.PackageReference,
 	themeAssets []kdexv1alpha1.Asset,
 	scripts []kdexv1alpha1.ScriptDef,
@@ -436,8 +494,9 @@ func (hh *HostHandler) SetHost(
 ) {
 	hh.mu.Lock()
 	hh.host = host
-	hh.conditions = conditions
-	if err := hh.cacheManager.Cycle(generation, true); err != nil {
+	hh.status = status
+	hh.checksum = ""
+	if err := hh.cacheManager.Cycle(hh.Checksum(), true); err != nil {
 		hh.log.Error(err, "failed to cycle cache manager")
 	}
 	hh.defaultLanguage = host.DefaultLang
@@ -618,7 +677,7 @@ func (hh *HostHandler) renderUtilityPage(utilityType kdexv1alpha1.KDexUtilityPag
 	}
 
 	utilityCache := hh.cacheManager.GetCache("utility", cache.CacheOptions{})
-	cacheKey := fmt.Sprintf("%s:%s", utilityType, l.String())
+	cacheKey := ph.CacheKey(l)
 
 	// Only attempt cache logic if there's no dynamic extra data
 	if len(extraTemplateData) == 0 {

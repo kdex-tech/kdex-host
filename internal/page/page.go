@@ -1,12 +1,17 @@
 package page
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
+
+	"golang.org/x/text/language"
 )
 
 const (
-	customElementTemplate = `<%s id="content-%s" data-app-name="%s" data-app-generation="%s"%s></%s>`
+	customElementTemplate = `<%s data-content-id="%s" data-app-name="%s" data-app-generation="%s"%s></%s>`
 	navigationTemplate    = `<nav id="navigation-%s">
 <script type="text/javascript">
 fetch('/-/navigation/%s/[[ .Language ]]%s')
@@ -16,8 +21,49 @@ fetch('/-/navigation/%s/[[ .Language ]]%s')
   });
 </script>
 </nav>`
-	rawHTMLTemplate = `<div id="content-%s">%s</div>`
+	rawHTMLTemplate = `<div data-content-id="%s">%s</div>`
 )
+
+func (p *PageHandler) CacheKey(l language.Tag) string {
+	return fmt.Sprintf("%s:%s:%s", p.Name, p.Checksum(), l.String())
+}
+
+func (p *PageHandler) Checksum() string {
+	if p.checksum != "" {
+		return p.checksum
+	}
+
+	// Generate a checksum based on the p.Status
+	// This is used to invalidate the cache when the host changes
+	// We use the p.Status to ensure that the cache is invalidated when the host changes
+
+	if p.Status == nil {
+		return ""
+	}
+
+	// 1. Extract the keys
+	keys := make([]string, 0, len(p.Status.Attributes))
+	for k := range p.Status.Attributes {
+		keys = append(keys, k)
+	}
+
+	// 2. Sort the keys alphabetically
+	sort.Strings(keys)
+
+	// 3. Create a hash object
+	h := sha256.New()
+
+	// 4. Write the status.ObservedGeneration
+	h.Write([]byte(strconv.FormatInt(p.Status.ObservedGeneration, 10)))
+
+	// 5. Write key-value pairs in the sorted order
+	for _, k := range keys {
+		h.Write([]byte(k))
+		h.Write([]byte(p.Status.Attributes[k]))
+	}
+
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
 
 func (p *PageHandler) ContentToHTMLMap() map[string]string {
 	items := map[string]string{}

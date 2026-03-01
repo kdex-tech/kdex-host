@@ -2,7 +2,6 @@ package host
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -39,7 +38,8 @@ func (hh *HostHandler) pageHandlerFunc(
 		}
 
 		pageCache := hh.cacheManager.GetCache("page", cache.CacheOptions{})
-		cacheKey := fmt.Sprintf("%s:%s", ph.Name, l.String())
+
+		cacheKey := ph.CacheKey(l)
 
 		rendered, ok, isCurrent, err := pageCache.Get(r.Context(), cacheKey)
 		if err != nil {
@@ -49,7 +49,7 @@ func (hh *HostHandler) pageHandlerFunc(
 		if ok {
 			// Check if we need to migrate this stale entry to the current generation
 			if !isCurrent {
-				hh.log.V(1).Info("serving stale page, migrating in background", "page", ph.Name, "lang", l.String())
+				hh.log.V(2).Info("serving stale page, migrating in background", "page", ph.Name, "lang", l)
 
 				// Background Migration
 				go func(p page.PageHandler, lang language.Tag, trans *Translations) {
@@ -64,6 +64,8 @@ func (hh *HostHandler) pageHandlerFunc(
 					}
 				}(ph, l, translations)
 			}
+
+			hh.log.V(2).Info("serving from cache", "page", ph.Name, "lang", l)
 
 			// Serve the cached content (Current or Stale)
 			hh.serveRendered(w, l, ph.Name, rendered)
@@ -89,7 +91,7 @@ func (hh *HostHandler) pageHandlerFunc(
 
 // Small helper to keep the main handler clean
 func (hh *HostHandler) serveRendered(w http.ResponseWriter, l language.Tag, name string, rendered string) {
-	hh.log.V(1).Info("serving", "page", name, "language", l.String())
+	hh.log.V(1).Info("serving", "page", name, "language", l)
 	w.Header().Set("Content-Language", l.String())
 	w.Header().Set("Content-Type", "text/html")
 	if _, err := w.Write([]byte(rendered)); err != nil {

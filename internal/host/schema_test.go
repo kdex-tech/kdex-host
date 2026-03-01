@@ -72,7 +72,7 @@ func TestHostHandler_SchemaHandler(t *testing.T) {
 
 	th.SetHost(context.Background(), &kdexv1alpha1.KDexHostSpec{
 		DefaultLang: "en",
-	}, nil, 0, nil, nil, nil, "", registeredPaths, nil, nil, nil, "http")
+	}, nil, nil, nil, nil, "", registeredPaths, nil, nil, nil, "http")
 
 	tests := []struct {
 		name       string
@@ -121,7 +121,7 @@ func TestHostHandler_SchemaHandler(t *testing.T) {
 			req := httptest.NewRequest("GET", tt.path, nil)
 			w := httptest.NewRecorder()
 
-			th.ServeHTTP(w, req)
+			th.Mux.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.wantCode, w.Code)
 			if w.Code > 200 {

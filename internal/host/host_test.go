@@ -244,7 +244,7 @@ func TestHostHandler_L10nRender(t *testing.T) {
 				},
 			},
 			lang: "en",
-			want: []string{"FOOTER", "key", "/-/navigation/main/en/", `<sample-element id="content-main" data-app-name="sample-app" data-app-generation="1" data-test="test"></sample-element>`, "TITLE"},
+			want: []string{"FOOTER", "key", "/-/navigation/main/en/", `<sample-element data-content-id="main" data-app-name="sample-app" data-app-generation="1" data-test="test"></sample-element>`, "TITLE"},
 		},
 		{
 			name: "extra template data",
@@ -294,7 +294,7 @@ func TestHostHandler_L10nRender(t *testing.T) {
 
 			cacheManager, _ := cache.NewCacheManager("", "", nil)
 			th := NewHostHandler(nil, tt.host.name, "default", logr.Discard(), cacheManager)
-			th.SetHost(context.Background(), &tt.host.host, nil, 0, nil, nil, nil, "", map[string]ko.PathInfo{}, nil, nil, nil, "http")
+			th.SetHost(context.Background(), &tt.host.host, nil, nil, nil, nil, "", map[string]ko.PathInfo{}, nil, nil, nil, "http")
 			th.AddOrUpdateTranslation(tt.translationName, tt.translation)
 
 			got, gotErr := th.L10nRender(tt.pageHandler, map[string]any{}, language.Make(tt.lang), tt.extraTemplateData, &th.Translations)
@@ -389,7 +389,7 @@ func TestHostHandler_L10nRenders(t *testing.T) {
 
 			cacheManager, _ := cache.NewCacheManager("", "", nil)
 			th := NewHostHandler(nil, tt.host.name, "default", logr.Discard(), cacheManager)
-			th.SetHost(context.Background(), &tt.host.host, nil, 0, nil, nil, nil, "", map[string]ko.PathInfo{}, nil, nil, nil, "http")
+			th.SetHost(context.Background(), &tt.host.host, nil, nil, nil, nil, "", map[string]ko.PathInfo{}, nil, nil, nil, "http")
 			th.AddOrUpdateTranslation(tt.translationName, tt.translation)
 
 			got := th.L10nRenders(tt.pageHandler, map[language.Tag]map[string]any{}, &th.Translations)
@@ -475,7 +475,7 @@ func TestHostHandler_AddOrUpdateTranslation(t *testing.T) {
 
 			cacheManager, _ := cache.NewCacheManager("", "", nil)
 			th := NewHostHandler(nil, tt.host.name, "default", logr.Discard(), cacheManager)
-			th.SetHost(context.Background(), &tt.host.host, nil, 0, nil, nil, nil, "", map[string]ko.PathInfo{}, nil, nil, nil, "http")
+			th.SetHost(context.Background(), &tt.host.host, nil, nil, nil, nil, "", map[string]ko.PathInfo{}, nil, nil, nil, "http")
 			th.AddOrUpdateTranslation(tt.translationName, tt.translation)
 
 			for lang, expected := range tt.langTests {

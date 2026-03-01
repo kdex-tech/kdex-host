@@ -13,6 +13,7 @@ import (
 	"github.com/kdex-tech/host-manager/internal/page"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/text/language"
 	kdexv1alpha1 "kdex.dev/crds/api/v1alpha1"
 )
 
@@ -39,12 +40,12 @@ func TestHostHandler_PageCaching(t *testing.T) {
 	hh.SetHost(context.Background(), &kdexv1alpha1.KDexHostSpec{
 		DefaultLang: "en",
 		BrandName:   "KDex",
-	}, nil, 0, nil, nil, nil, "", nil, nil, &auth.Exchanger{}, &auth.Config{}, "http")
+	}, nil, nil, nil, nil, "", nil, nil, &auth.Exchanger{}, &auth.Config{}, "http")
 
 	// 1. Initial Request
 	req := httptest.NewRequest("GET", "/test/", nil)
 	w := httptest.NewRecorder()
-	hh.ServeHTTP(w, req)
+	hh.Mux.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	etag := w.Header().Get("ETag")
@@ -55,7 +56,7 @@ func TestHostHandler_PageCaching(t *testing.T) {
 	assert.Contains(t, body1, "Test Page")
 
 	// Verify it's in cache
-	cacheVal, found, isCurrent, err := cacheManager.GetCache("page", cache.CacheOptions{}).Get(context.Background(), "test-page:en")
+	cacheVal, found, isCurrent, err := cacheManager.GetCache("page", cache.CacheOptions{}).Get(context.Background(), ph.CacheKey(language.English))
 	require.NoError(t, err)
 	assert.True(t, found)
 	assert.True(t, isCurrent)
@@ -102,12 +103,12 @@ func TestHostHandler_NavigationCaching(t *testing.T) {
 	hh.SetHost(context.Background(), &kdexv1alpha1.KDexHostSpec{
 		DefaultLang: "en",
 		BrandName:   "KDex",
-	}, nil, 0, nil, nil, nil, "", nil, nil, &auth.Exchanger{}, &auth.Config{}, "http")
+	}, nil, nil, nil, nil, "", nil, nil, &auth.Exchanger{}, &auth.Config{}, "http")
 
 	// 1. Initial Request
 	req := httptest.NewRequest("GET", "/-/navigation/main/en/test", nil)
 	w := httptest.NewRecorder()
-	hh.ServeHTTP(w, req)
+	hh.Mux.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	body1 := w.Body.String()
@@ -115,7 +116,7 @@ func TestHostHandler_NavigationCaching(t *testing.T) {
 
 	// Verify it's in cache
 	// Key format: nav:main:/test:en:anon (since no auth)
-	cacheKey := "main:/test:en:anon"
+	cacheKey := fmt.Sprintf("%s:%s:%s:%s", "main", ph.Checksum(), language.English.String(), "anon")
 	cacheVal, found, isCurrent, err := cacheManager.GetCache("nav", cache.CacheOptions{}).Get(context.Background(), cacheKey)
 	require.NoError(t, err)
 	assert.True(t, found)
@@ -132,13 +133,14 @@ func TestHostHandler_NavigationCaching(t *testing.T) {
 	// But applyCachingHeaders checks hh.authConfig.IsAuthEnabled().
 
 	w2 := httptest.NewRecorder()
-	hh.ServeHTTP(w2, req2)
+	hh.Mux.ServeHTTP(w2, req2)
 	assert.Equal(t, http.StatusOK, w2.Code)
 
 	// Verify different cache key is used
 	userHash := hh.getUserHash(req2)
 	assert.NotEqual(t, "anon", userHash)
-	cacheKey2 := fmt.Sprintf("main:/test:en:%s", userHash)
+	// cacheKey2 := fmt.Sprintf("main:/test:en:%s", userHash)
+	cacheKey2 := fmt.Sprintf("%s:%s:%s:%s", "main", ph.Checksum(), language.English.String(), userHash)
 
 	_, found2, _, err2 := cacheManager.GetCache("nav", cache.CacheOptions{}).Get(context.Background(), cacheKey2)
 	assert.NoError(t, err2)

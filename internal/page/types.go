@@ -16,7 +16,10 @@ type PageHandler struct {
 	Page              *kdexv1alpha1.KDexPageBindingSpec
 	RequiredBackends  []kdexv1alpha1.KDexObjectReference
 	Scripts           []kdexv1alpha1.ScriptDef
+	Status            *kdexv1alpha1.KDexObjectStatus
 	UtilityPage       *kdexv1alpha1.KDexUtilityPageSpec
+
+	checksum string
 }
 
 type PackedContent struct {

@@ -122,7 +122,7 @@ func (r *KDexInternalHostReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	seenPaths := map[string]bool{}
 	themeAssets := []kdexv1alpha1.Asset{}
 
-	secrets, err := ResolveServiceAccountSecrets(ctx, r.Client, internalHost.Namespace, internalHost.Spec.ServiceAccountRef.Name)
+	secrets, err := ResolveServiceAccountSecrets(ctx, r.Client, &internalHost.Status, internalHost.Namespace, internalHost.Spec.ServiceAccountRef.Name)
 	if err != nil {
 		kdexv1alpha1.SetConditions(
 			&internalHost.Status.Conditions,
@@ -220,12 +220,14 @@ func (r *KDexInternalHostReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		kdexv1alpha1.LoginUtilityPageType,
 	} {
 		pageHandler := r.HostHandler.GetUtilityPageHandler(utilityPageType)
+		generation := 0
 		if pageHandler.Name == "" {
 			// check if it's supposed to be there
 			expected := false
 			for _, up := range utilityPages.Items {
 				if up.Spec.Type == utilityPageType {
 					expected = true
+					generation = int(up.GetGeneration())
 					break
 				}
 			}
@@ -238,6 +240,8 @@ func (r *KDexInternalHostReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		packageRefs = append(packageRefs, pageHandler.PackageReferences...)
 		backendRefs = append(backendRefs, pageHandler.RequiredBackends...)
 		// we don't add page scripts here, because they are added by the pages
+
+		internalHost.Status.Attributes[fmt.Sprintf("utilityPage.%s.generation", utilityPageType)] = fmt.Sprintf("%d", generation)
 	}
 
 	if internalHost.Spec.IsConfigured(defaultBackendServerImage) {
@@ -644,8 +648,7 @@ func (r *KDexInternalHostReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	r.HostHandler.SetHost(
 		ctx,
 		&internalHost.Spec.KDexHostSpec,
-		&internalHost.Status.Conditions,
-		internalHost.Generation,
+		&internalHost.Status,
 		uniquePackageRefs,
 		themeAssets,
 		uniqueScriptDefs,
