@@ -108,10 +108,12 @@ func (r *KDexFunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r1, err
 	}
 
-	secrets, err := ResolveServiceAccountSecrets(ctx, r.Client, internalHost.Namespace, internalHost.Spec.ServiceAccountRef.Name)
+	function.Status.Attributes["host.generation"] = fmt.Sprintf("%d", internalHost.GetGeneration())
+
+	secrets, err := ResolveServiceAccountSecrets(ctx, r.Client, &function.Status.KDexObjectStatus, internalHost.Namespace, internalHost.Spec.ServiceAccountRef.Name)
 	if err != nil {
 		kdexv1alpha1.SetConditions(
-			&internalHost.Status.Conditions,
+			&function.Status.Conditions,
 			kdexv1alpha1.ConditionStatuses{
 				Degraded:    metav1.ConditionTrue,
 				Progressing: metav1.ConditionFalse,
