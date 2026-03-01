@@ -9,9 +9,9 @@ import (
 )
 
 type Cache interface {
+	Checksum() string
 	Class() string
 	Delete(ctx context.Context, key string) error
-	Generation() int64
 	Get(ctx context.Context, key string) (string, bool, bool, error)
 	Host() string
 	Set(ctx context.Context, key string, value string) error
@@ -25,7 +25,7 @@ type CacheOptions struct {
 }
 
 type CacheManager interface {
-	Cycle(generation int64, force bool) error
+	Cycle(checksum string, force bool) error
 	GetCache(class string, opts CacheOptions) Cache
 }
 
@@ -36,10 +36,10 @@ func NewCacheManager(addr, host string, ttl *time.Duration) (CacheManager, error
 
 	if addr == "" {
 		return &InMemoryCacheManager{
-			caches:            make(map[string]Cache),
-			currentGeneration: 0,
-			host:              host,
-			ttl:               *ttl,
+			caches:          make(map[string]Cache),
+			currentChecksum: "0",
+			host:            host,
+			ttl:             *ttl,
 		}, nil
 	}
 
@@ -51,10 +51,10 @@ func NewCacheManager(addr, host string, ttl *time.Duration) (CacheManager, error
 		return nil, err
 	}
 	return &ValkeyCacheManager{
-		caches:            make(map[string]Cache),
-		client:            client,
-		currentGeneration: 0,
-		host:              host,
-		ttl:               *ttl,
+		caches:          make(map[string]Cache),
+		client:          client,
+		currentChecksum: "0",
+		host:            host,
+		ttl:             *ttl,
 	}, nil
 }

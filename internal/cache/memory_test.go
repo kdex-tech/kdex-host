@@ -18,11 +18,11 @@ func TestCacheLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// 2. Set Generation 1
-	mgr.Cycle(1, false)
+	mgr.Cycle("1", false)
 	c.Set(ctx, "page1", "content-v1")
 
 	// 3. Update to Generation 2 (The Cycle)
-	mgr.Cycle(2, false)
+	mgr.Cycle("2", false)
 
 	// 4. Verify Fallback (N-1)
 	val, ok, isCurrent, err := c.Get(ctx, "page1")
@@ -55,7 +55,7 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 			assertions: func(t *testing.T, got Cache, cacheManager CacheManager) {
 				assert.NotNil(t, got)
 				assert.Equal(t, "test", got.Class())
-				assert.Equal(t, int64(0), got.Generation())
+				assert.Equal(t, "0", got.Checksum())
 				assert.Equal(t, "foo", got.Host())
 				assert.Equal(t, time.Duration(100*time.Millisecond), got.TTL())
 				assert.False(t, got.Uncycled())
@@ -69,14 +69,14 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 			assertions: func(t *testing.T, got Cache, cacheManager CacheManager) {
 				assert.NotNil(t, got)
 				assert.Equal(t, "test", got.Class())
-				assert.Equal(t, int64(0), got.Generation())
+				assert.Equal(t, "0", got.Checksum())
 				assert.Equal(t, "foo", got.Host())
 				assert.Equal(t, time.Duration(100*time.Millisecond), got.TTL())
 				assert.False(t, got.Uncycled())
-				cacheManager.Cycle(1, false)
-				assert.Equal(t, int64(1), got.Generation())
-				cacheManager.Cycle(2, false)
-				assert.Equal(t, int64(2), got.Generation())
+				cacheManager.Cycle("1", false)
+				assert.Equal(t, "1", got.Checksum())
+				cacheManager.Cycle("2", false)
+				assert.Equal(t, "2", got.Checksum())
 			},
 		},
 		{
@@ -87,7 +87,7 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 			assertions: func(t *testing.T, got Cache, cacheManager CacheManager) {
 				assert.NotNil(t, got)
 				assert.Equal(t, "test", got.Class())
-				assert.Equal(t, int64(0), got.Generation())
+				assert.Equal(t, "0", got.Checksum())
 				assert.Equal(t, "foo", got.Host())
 				assert.Equal(t, time.Duration(100*time.Millisecond), got.TTL())
 				assert.False(t, got.Uncycled())
@@ -103,8 +103,8 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 				assert.Equal(t, "test", val)
 
 				// Cycle to generation 1 - we got the fallback v(N-1)
-				cacheManager.Cycle(1, false)
-				assert.Equal(t, int64(1), got.Generation())
+				cacheManager.Cycle("1", false)
+				assert.Equal(t, "1", got.Checksum())
 				val, ok, isCurrent, err = got.Get(ctx, "test")
 				assert.NoError(t, err)
 				assert.True(t, ok)
@@ -112,8 +112,8 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 				assert.Equal(t, "test", val)
 
 				// Cycle to generation 2
-				cacheManager.Cycle(2, false)
-				assert.Equal(t, int64(2), got.Generation())
+				cacheManager.Cycle("2", false)
+				assert.Equal(t, "2", got.Checksum())
 				val, ok, isCurrent, err = got.Get(ctx, "test")
 				assert.NoError(t, err)
 				assert.False(t, ok)
@@ -129,7 +129,7 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 			assertions: func(t *testing.T, got Cache, cacheManager CacheManager) {
 				assert.NotNil(t, got)
 				assert.Equal(t, "test", got.Class())
-				assert.Equal(t, int64(0), got.Generation())
+				assert.Equal(t, "0", got.Checksum())
 				assert.Equal(t, "foo", got.Host())
 				assert.Equal(t, time.Duration(100*time.Millisecond), got.TTL())
 				assert.False(t, got.Uncycled())
@@ -145,8 +145,8 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 				assert.Equal(t, "test", val)
 
 				// Cycle to generation 1 - force, no fallback
-				cacheManager.Cycle(1, true)
-				assert.Equal(t, int64(1), got.Generation())
+				cacheManager.Cycle("1", true)
+				assert.Equal(t, "1", got.Checksum())
 				val, ok, isCurrent, err = got.Get(ctx, "test")
 				assert.NoError(t, err)
 				assert.False(t, ok)
@@ -162,7 +162,7 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 			assertions: func(t *testing.T, got Cache, cacheManager CacheManager) {
 				assert.NotNil(t, got)
 				assert.Equal(t, "test", got.Class())
-				assert.Equal(t, int64(0), got.Generation())
+				assert.Equal(t, "0", got.Checksum())
 				assert.Equal(t, "foo", got.Host())
 				assert.Equal(t, time.Duration(100*time.Millisecond), got.TTL())
 				assert.True(t, got.Uncycled())
@@ -178,8 +178,8 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 				assert.Equal(t, "test", val)
 
 				// Cycle an uncycled cache without force does not clear the cache
-				cacheManager.Cycle(1, false)
-				assert.Equal(t, int64(0), got.Generation())
+				cacheManager.Cycle("1", false)
+				assert.Equal(t, "0", got.Checksum())
 				val, ok, isCurrent, err = got.Get(ctx, "test")
 				assert.NoError(t, err)
 				assert.True(t, ok)
@@ -195,7 +195,7 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 			assertions: func(t *testing.T, got Cache, cacheManager CacheManager) {
 				assert.NotNil(t, got)
 				assert.Equal(t, "test", got.Class())
-				assert.Equal(t, int64(0), got.Generation())
+				assert.Equal(t, "0", got.Checksum())
 				assert.Equal(t, "foo", got.Host())
 				assert.Equal(t, time.Duration(100*time.Millisecond), got.TTL())
 				assert.True(t, got.Uncycled())
@@ -211,8 +211,8 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 				assert.Equal(t, "test", val)
 
 				// Cycle with force clears an uncycled cache
-				cacheManager.Cycle(1, true)
-				assert.Equal(t, int64(1), got.Generation())
+				cacheManager.Cycle("1", true)
+				assert.Equal(t, "1", got.Checksum())
 				val, ok, isCurrent, err = got.Get(ctx, "test")
 				assert.NoError(t, err)
 				assert.False(t, ok)
@@ -228,7 +228,7 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 			assertions: func(t *testing.T, got Cache, cacheManager CacheManager) {
 				assert.NotNil(t, got)
 				assert.Equal(t, "test", got.Class())
-				assert.Equal(t, int64(0), got.Generation())
+				assert.Equal(t, "0", got.Checksum())
 				assert.Equal(t, "foo", got.Host())
 				assert.Equal(t, time.Duration(100*time.Millisecond), got.TTL())
 				assert.False(t, got.Uncycled())
@@ -275,7 +275,7 @@ func TestInMemoryCacheManager_GetCache(t *testing.T) {
 			got := cacheManager.GetCache(class, opts)
 			tt.assertions(t, got, cacheManager)
 			t.Cleanup(func() {
-				cacheManager.Cycle(0, true)
+				cacheManager.Cycle("0", true)
 			})
 		})
 	}

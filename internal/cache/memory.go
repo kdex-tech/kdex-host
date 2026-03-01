@@ -7,17 +7,23 @@ import (
 )
 
 type InMemoryCache struct {
-	class             string
-	currentGeneration int64
-	host              string
-	mu                sync.RWMutex
-	segments          map[int64]map[string]memoryCacheEntry
-	ttl               time.Duration
-	uncycled          bool
-	updateChan        chan time.Duration
+	class           string
+	currentChecksum string
+	host            string
+	mu              sync.RWMutex
+	segments        map[string]map[string]memoryCacheEntry
+	ttl             time.Duration
+	uncycled        bool
+	updateChan      chan time.Duration
 }
 
 var _ Cache = (*InMemoryCache)(nil)
+
+func (c *InMemoryCache) Checksum() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.currentChecksum
+}
 
 func (c *InMemoryCache) Class() string {
 	return c.class
@@ -31,12 +37,6 @@ func (c *InMemoryCache) Delete(ctx context.Context, key string) error {
 		delete(seg, key)
 	}
 	return nil
-}
-
-func (c *InMemoryCache) Generation() int64 {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.currentGeneration
 }
 
 func (c *InMemoryCache) Host() string {
@@ -56,7 +56,7 @@ func (c *InMemoryCache) Get(ctx context.Context, key string) (string, bool, bool
 	defer c.mu.RUnlock()
 
 	// 1. Try Current Generation
-	if seg, ok := c.segments[c.currentGeneration]; ok {
+	if seg, ok := c.segments[c.currentChecksum]; ok {
 		if entry, found := seg[key]; found {
 			// LAZY DELETION CHECK
 			if time.Now().After(entry.expiry) {
@@ -70,7 +70,7 @@ func (c *InMemoryCache) Get(ctx context.Context, key string) (string, bool, bool
 	// 2. Try Previous Generation (Searching for any other segment)
 	// In a two-generation system, there will only be one other key.
 	for gen, seg := range c.segments {
-		if gen == c.currentGeneration {
+		if gen == c.currentChecksum {
 			continue
 		}
 		if entry, found := seg[key]; found {
@@ -91,11 +91,11 @@ func (c *InMemoryCache) Set(ctx context.Context, key string, value string) error
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.segments[c.currentGeneration] == nil {
-		c.segments[c.currentGeneration] = make(map[string]memoryCacheEntry)
+	if c.segments[c.currentChecksum] == nil {
+		c.segments[c.currentChecksum] = make(map[string]memoryCacheEntry)
 	}
 
-	c.segments[c.currentGeneration][key] = memoryCacheEntry{
+	c.segments[c.currentChecksum][key] = memoryCacheEntry{
 		expiry: time.Now().Add(c.ttl),
 		value:  value,
 	}
@@ -137,21 +137,21 @@ func (c *InMemoryCache) startReaper(interval time.Duration) {
 }
 
 type InMemoryCacheManager struct {
-	caches            map[string]Cache
-	currentGeneration int64
-	host              string
-	mu                sync.RWMutex
-	ttl               time.Duration
+	caches          map[string]Cache
+	currentChecksum string
+	host            string
+	mu              sync.RWMutex
+	ttl             time.Duration
 }
 
 var _ CacheManager = (*InMemoryCacheManager)(nil)
 
-func (m *InMemoryCacheManager) Cycle(generation int64, force bool) error {
+func (m *InMemoryCacheManager) Cycle(checksum string, force bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	oldGen := m.currentGeneration
-	m.currentGeneration = generation
+	oldChecksum := m.currentChecksum
+	m.currentChecksum = checksum
 
 	for _, cache := range m.caches {
 		if mCache, ok := cache.(*InMemoryCache); ok {
@@ -159,24 +159,24 @@ func (m *InMemoryCacheManager) Cycle(generation int64, force bool) error {
 				continue
 			}
 			mCache.mu.Lock()
-			mCache.currentGeneration = generation
+			mCache.currentChecksum = checksum
 
 			// Ensure the new generation map exists
-			if mCache.segments[generation] == nil {
-				mCache.segments[generation] = make(map[string]memoryCacheEntry)
+			if mCache.segments[checksum] == nil {
+				mCache.segments[checksum] = make(map[string]memoryCacheEntry)
 			}
 
 			// If forced, wipe all generations except the current one
 			if force {
 				for g := range mCache.segments {
-					if g != generation {
+					if g != checksum {
 						delete(mCache.segments, g)
 					}
 				}
 			} else {
 				// Standard cycle: delete anything older than the previous gen
 				for g := range mCache.segments {
-					if g != generation && g != oldGen {
+					if g != checksum && g != oldChecksum {
 						delete(mCache.segments, g)
 					}
 				}
@@ -221,12 +221,12 @@ func (m *InMemoryCacheManager) GetCache(class string, opts CacheOptions) Cache {
 		ttl = *opts.TTL
 	}
 	cache = &InMemoryCache{
-		class:             class,
-		currentGeneration: m.currentGeneration,
-		host:              m.host,
-		uncycled:          opts.Uncycled,
-		segments:          make(map[int64]map[string]memoryCacheEntry),
-		ttl:               ttl,
+		class:           class,
+		currentChecksum: m.currentChecksum,
+		host:            m.host,
+		uncycled:        opts.Uncycled,
+		segments:        make(map[string]map[string]memoryCacheEntry),
+		ttl:             ttl,
 	}
 	go cache.(*InMemoryCache).startReaper(ttl)
 	m.caches[class] = cache

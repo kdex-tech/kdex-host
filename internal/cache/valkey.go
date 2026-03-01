@@ -10,18 +10,24 @@ import (
 )
 
 type ValkeyCache struct {
-	client            valkey.Client
-	class             string
-	currentGeneration int64
-	host              string
-	uncycled          bool
-	mu                sync.RWMutex
-	prefix            string // e.g. "{host:class:generation}:"
-	prevPrefix        string // e.g. "{host:class:generation-1}:"
-	ttl               time.Duration
+	client          valkey.Client
+	class           string
+	currentChecksum string
+	host            string
+	uncycled        bool
+	mu              sync.RWMutex
+	prefix          string // e.g. "{host:class:generation}:"
+	prevPrefix      string // e.g. "{host:class:generation-1}:"
+	ttl             time.Duration
 }
 
 var _ Cache = (*ValkeyCache)(nil)
+
+func (s *ValkeyCache) Checksum() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.currentChecksum
+}
 
 func (s *ValkeyCache) Class() string {
 	return s.class
@@ -40,12 +46,6 @@ func (s *ValkeyCache) Delete(ctx context.Context, key string) error {
 
 	cmd := s.client.B().Del().Key(keys...).Build()
 	return s.client.Do(ctx, cmd).Error()
-}
-
-func (s *ValkeyCache) Generation() int64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.currentGeneration
 }
 
 func (s *ValkeyCache) Host() string {
@@ -101,21 +101,21 @@ func (s *ValkeyCache) getValue(ctx context.Context, fullKey string) (string, boo
 }
 
 type ValkeyCacheManager struct {
-	caches            map[string]Cache
-	client            valkey.Client
-	currentGeneration int64
-	host              string
-	mu                sync.RWMutex
-	ttl               time.Duration
+	caches          map[string]Cache
+	client          valkey.Client
+	currentChecksum string
+	host            string
+	mu              sync.RWMutex
+	ttl             time.Duration
 }
 
 var _ CacheManager = (*ValkeyCacheManager)(nil)
 
-func (m *ValkeyCacheManager) Cycle(generation int64, force bool) error {
+func (m *ValkeyCacheManager) Cycle(checksum string, force bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.currentGeneration = generation
+	m.currentChecksum = checksum
 
 	for _, cache := range m.caches {
 		if vCache, ok := cache.(*ValkeyCache); ok {
@@ -128,8 +128,8 @@ func (m *ValkeyCacheManager) Cycle(generation int64, force bool) error {
 			} else {
 				vCache.prevPrefix = vCache.prefix
 			}
-			vCache.currentGeneration = generation
-			vCache.prefix = fmt.Sprintf("{%s:%s:%d}:", m.host, vCache.class, generation)
+			vCache.currentChecksum = checksum
+			vCache.prefix = fmt.Sprintf("{%s:%s:%s}:", m.host, vCache.class, checksum)
 			vCache.mu.Unlock()
 		}
 	}
@@ -157,13 +157,13 @@ func (m *ValkeyCacheManager) GetCache(class string, opts CacheOptions) Cache {
 		ttl = *opts.TTL
 	}
 	cache := &ValkeyCache{
-		client:            m.client,
-		class:             class,
-		currentGeneration: m.currentGeneration,
-		host:              m.host,
-		uncycled:          opts.Uncycled,
-		prefix:            fmt.Sprintf("{%s:%s:%d}:", m.host, class, m.currentGeneration),
-		ttl:               ttl,
+		client:          m.client,
+		class:           class,
+		currentChecksum: m.currentChecksum,
+		host:            m.host,
+		uncycled:        opts.Uncycled,
+		prefix:          fmt.Sprintf("{%s:%s:%s}:", m.host, class, m.currentChecksum),
+		ttl:             ttl,
 	}
 	m.caches[class] = cache
 	return cache
