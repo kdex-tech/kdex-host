@@ -313,11 +313,13 @@ func ResolveSecret(
 	return &secret, false, ctrl.Result{}, nil
 }
 
-func ResolveServiceAccountSecrets(ctx context.Context, c client.Client, namespace string, saName string) ([]corev1.Secret, error) {
+func ResolveServiceAccountSecrets(ctx context.Context, c client.Client, objectStatus *kdexv1alpha1.KDexObjectStatus, namespace string, saName string) ([]corev1.Secret, error) {
 	var sa corev1.ServiceAccount
 	if err := c.Get(ctx, types.NamespacedName{Name: saName, Namespace: namespace}, &sa); err != nil {
 		return nil, fmt.Errorf("failed to get service account %s/%s: %w", namespace, saName, err)
 	}
+
+	objectStatus.Attributes["serviceAccount.generation"] = fmt.Sprintf("%d", sa.GetGeneration())
 
 	secrets := []corev1.Secret{}
 	for _, secretRef := range sa.Secrets {
