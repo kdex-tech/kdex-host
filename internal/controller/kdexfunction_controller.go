@@ -110,35 +110,7 @@ func (r *KDexFunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	function.Status.Attributes["host.generation"] = fmt.Sprintf("%d", internalHost.GetGeneration())
 
-	secrets, err := ResolveServiceAccountSecrets(ctx, r.Client, &function.Status.KDexObjectStatus, internalHost.Namespace, internalHost.Spec.ServiceAccountRef.Name)
-	if err != nil {
-		kdexv1alpha1.SetConditions(
-			&function.Status.Conditions,
-			kdexv1alpha1.ConditionStatuses{
-				Degraded:    metav1.ConditionTrue,
-				Progressing: metav1.ConditionFalse,
-				Ready:       metav1.ConditionFalse,
-			},
-			kdexv1alpha1.ConditionReasonReconcileError,
-			err.Error(),
-		)
-
-		return ctrl.Result{}, err
-	}
-
-	internalHost.Spec.ServiceAccountSecrets = secrets
-
-	imagePullSecretRefs := []corev1.LocalObjectReference{}
-	imagePullSecrets := internalHost.Spec.ServiceAccountSecrets.Filter(
-		func(s corev1.Secret) bool {
-			return s.Type == corev1.SecretTypeDockerConfigJson
-		},
-	)
-	for _, secret := range imagePullSecrets {
-		imagePullSecretRefs = append(imagePullSecretRefs, corev1.LocalObjectReference{
-			Name: secret.Name,
-		})
-	}
+	// TODO: if there is no specific faas adaptor referenced, do a list lookup to find the default faas adaptor
 
 	faasAdaptorRef := internalHost.Spec.FaaSAdaptorRef
 	if faasAdaptorRef == nil {
@@ -180,6 +152,36 @@ func (r *KDexFunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		function.Status.State = kdexv1alpha1.KDexFunctionStateOpenAPIValid
 	}
 	function.Status.Attributes["faasAdaptor.generation"] = currentGen
+
+	secrets, err := ResolveServiceAccountSecrets(ctx, r.Client, &function.Status.KDexObjectStatus, internalHost.Namespace, internalHost.Spec.ServiceAccountRef.Name)
+	if err != nil {
+		kdexv1alpha1.SetConditions(
+			&function.Status.Conditions,
+			kdexv1alpha1.ConditionStatuses{
+				Degraded:    metav1.ConditionTrue,
+				Progressing: metav1.ConditionFalse,
+				Ready:       metav1.ConditionFalse,
+			},
+			kdexv1alpha1.ConditionReasonReconcileError,
+			err.Error(),
+		)
+
+		return ctrl.Result{}, err
+	}
+
+	internalHost.Spec.ServiceAccountSecrets = secrets
+
+	imagePullSecretRefs := []corev1.LocalObjectReference{}
+	imagePullSecrets := internalHost.Spec.ServiceAccountSecrets.Filter(
+		func(s corev1.Secret) bool {
+			return s.Type == corev1.SecretTypeDockerConfigJson
+		},
+	)
+	for _, secret := range imagePullSecrets {
+		imagePullSecretRefs = append(imagePullSecretRefs, corev1.LocalObjectReference{
+			Name: secret.Name,
+		})
+	}
 
 	hc := handlerContext{
 		ctx:              ctx,
